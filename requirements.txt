@@ -1,3 +1,5 @@
-pyTelegramBotAPI
-uvicorn
-fastapi
+flask==3.0.3
+python-telegram-bot==21.5
+apscheduler==3.10.4
+httpx==0.27.0
+gunicorn==22.0.0
