@@ -16,9 +16,10 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 GROQ_API_KEY       = os.environ.get("GROQ_API_KEY", "")
+POSTING_CHANNEL    = os.environ.get("POSTING_CHANNEL", "")  # Channel jahan bot post karega
 
 # Conversation states
-WAIT_IMAGES, WAIT_TITLE, WAIT_LINK = range(3)
+WAIT_IMAGES, WAIT_TITLE, WAIT_DOWNLOAD = range(3)
 
 # In-memory store
 store: dict = {}
@@ -37,7 +38,7 @@ async def ask_claude(prompt: str) -> str:
     }
     payload = {
         "model": "llama3-8b-8192",
-        "max_tokens": 1000,
+        "max_completion_tokens": 1000,
         "messages": [{"role": "user", "content": prompt}],
     }
     async with httpx.AsyncClient(timeout=30) as client:
@@ -47,21 +48,21 @@ async def ask_claude(prompt: str) -> str:
 
 
 async def generate_post_content(base_title: str, post_count: int) -> dict:
-    prompt = f"""You are a Telegram channel content expert. Generate viral post content.
+    prompt = f"""You are a Telegram channel content expert. Generate viral Telegram post content.
 
 Base Title: "{base_title}"
 Post Number: {post_count + 1}
 
 Rules:
-1. Create a UNIQUE title variation each time (rotate: 'Full Movie', 'HD 1080p', 'Official', 'Hindi Dubbed', 'Review', '2025', 'Watch Online', 'Free Download', 'Box Office', 'Trailer' etc.)
-2. Generate 5-7 trending SEO keywords (comma separated)
-3. Generate 8-10 relevant hashtags (with # symbol, space separated)
+1. Create a SHORT unique title (1 line only, vary each time: add Hindi Dubbed, Full Movie, HD, Trailer, Review, 2025, Watch Online, Download, etc.)
+2. Generate exactly 5 trending SEO keyword LINES (each on new line, like search queries people type)
+3. Generate 6-8 hashtags (with # symbol, space separated, relevant to title)
 
 Respond ONLY in this exact JSON format (no markdown, no extra text):
 {{
-  "title": "unique title variation",
-  "keywords": "keyword1, keyword2, keyword3, keyword4, keyword5",
-  "hashtags": "#tag1 #tag2 #tag3 #tag4 #tag5 #tag6 #tag7 #tag8"
+  "title": "Short Unique Title Here",
+  "keywords": "keyword line 1\nkeyword line 2\nkeyword line 3\nkeyword line 4\nkeyword line 5",
+  "hashtags": "#tag1 #tag2 #tag3 #tag4 #tag5 #tag6 #tag7"
 }}"""
 
     response = await ask_claude(prompt)
@@ -72,7 +73,7 @@ Respond ONLY in this exact JSON format (no markdown, no extra text):
         logger.error(f"JSON parse error: {e}")
         return {
             "title": f"{base_title} | Part {post_count + 1}",
-            "keywords": "trending, viral, movie, hindi, latest",
+            "keywords": f"{base_title} full movie\n{base_title} hindi dubbed\n{base_title} download\n{base_title} watch online\n{base_title} trailer 2025",
             "hashtags": "#trending #viral #movie #hindi #latest",
         }
 
@@ -82,20 +83,21 @@ async def send_scheduled_post():
     if not store.get("channel_id"):
         return
 
-    channel_id   = store["channel_id"]
+    channel_id   = POSTING_CHANNEL or store.get("channel_id", "")
     base_title   = store["base_title"]
     images       = store.get("images", [])
     post_count   = store.get("post_count", 0)
-    channel_link = store.get("channel_link", "")
+    channel_link = store.get("download_link", "")  # Download link from bot
 
     logger.info(f"Generating post #{post_count + 1}")
     content = await generate_post_content(base_title, post_count)
 
     caption = (
-        f"🎬 *{content['title']}*\n\n"
-        f"🔍 *Keywords:* {content['keywords']}\n\n"
-        f"🔗 *Join:* {channel_link}\n\n"
-        f"{content['hashtags']}"
+        f"*{content['title']}*\n\n"
+        f"Download Link:\n"
+        f"{channel_link}\n\n"
+        f"{content['hashtags']}\n\n"
+        f"{content['keywords']}"
     )
 
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -195,12 +197,12 @@ async def got_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["title"] = update.message.text.strip()
     await update.message.reply_text(
         f"✅ Title: *{context.user_data['title']}*\n\n"
-        f"🔗 *Step 3/3 — Channel Link*\n\nChannel ka link bhejo\n"
-        f"_(Example: https://t.me/yourchannel)_\n\n"
-        f"⚠️ Bot ko channel ka *Admin* banana na bhulo!",
+        f"🔗 *Step 3/3 — Download Link*\n\n"
+        f"Post mein jo *Download Link* dikhana hai woh bhejo\n"
+        f"_(Example: https://t.me/filmyhubofficial/360)_",
         parse_mode="Markdown"
     )
-    return WAIT_LINK
+    return WAIT_DOWNLOAD
 
 async def got_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     link = update.message.text.strip()
@@ -283,7 +285,8 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     next_img   = (post_count % total_imgs) + 1 if total_imgs else 0
     await update.message.reply_text(
         f"📊 *Status*\n\n"
-        f"📢 Channel: `{store.get('channel_id')}`\n"
+        f"📢 Posting Channel: `{POSTING_CHANNEL}`\n"
+        f"🔗 Download Link: `{store.get('download_link', '—')}`\n"
         f"🎬 Title: `{store.get('base_title')}`\n"
         f"🖼️ Total Images: *{total_imgs}*\n"
         f"🔄 Agle post mein image: *#{next_img}*\n"
@@ -321,7 +324,7 @@ def build_application():
                 CommandHandler("done", images_done),
             ],
             WAIT_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, got_title)],
-            WAIT_LINK:  [MessageHandler(filters.TEXT & ~filters.COMMAND, got_link)],
+            WAIT_DOWNLOAD: [MessageHandler(filters.TEXT & ~filters.COMMAND, got_link)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
@@ -345,4 +348,3 @@ def build_application():
     app.add_handler(addimg_conv)
 
     return app
-    
