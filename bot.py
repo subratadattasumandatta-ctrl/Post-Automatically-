@@ -37,13 +37,14 @@ async def ask_claude(prompt: str) -> str:
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "llama3-8b-8192",
-        "max_completion_tokens": 1000,
+        "model": "llama-3.1-8b-instant",
         "messages": [{"role": "user", "content": prompt}],
     }
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload)
-        r.raise_for_status()
+        if r.status_code != 200:
+            logger.error(f"Groq error {r.status_code}: {r.text}")
+            r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"].strip()
 
 
