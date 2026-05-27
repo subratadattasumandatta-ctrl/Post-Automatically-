@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Global telegram app
 tg_app = None
+loop = None
 
 @app.route("/")
 def index():
@@ -22,31 +22,23 @@ def index():
 def health():
     return jsonify({"status": "ok", "posts_sent": store.get("post_count", 0)})
 
-@app.route("/status")
-def status():
-    return jsonify({
-        "channel_id":  store.get("channel_id"),
-        "base_title":  store.get("base_title"),
-        "post_count":  store.get("post_count", 0),
-    })
-
 @app.route(f"/webhook/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
 def webhook():
-    """Telegram webhook endpoint."""
-    global tg_app
-    if tg_app is None:
+    global tg_app, loop
+    if tg_app is None or loop is None:
         return jsonify({"error": "Bot not ready"}), 503
     try:
         data = request.get_json(force=True)
         update = Update.de_json(data, tg_app.bot)
-        asyncio.run(tg_app.process_update(update))
+        # Use the persistent event loop
+        future = asyncio.run_coroutine_threadsafe(tg_app.process_update(update), loop)
+        future.result(timeout=30)
         return jsonify({"ok": True})
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return jsonify({"error": str(e)}), 500
 
-async def setup_webhook():
-    """Set Telegram webhook."""
+async def bot_main():
     global tg_app
     tg_app = build_application()
     await tg_app.initialize()
@@ -57,11 +49,18 @@ async def setup_webhook():
         webhook_url = f"{render_url}/webhook/{TELEGRAM_BOT_TOKEN}"
         await tg_app.bot.set_webhook(url=webhook_url, drop_pending_updates=True)
         logger.info(f"✅ Webhook set: {webhook_url}")
-    else:
-        logger.warning("⚠️ RENDER_EXTERNAL_URL not set! Webhook not configured.")
 
     start_scheduler()
     logger.info("✅ Application started")
+
+    # Keep running forever
+    await asyncio.Event().wait()
+
+def run_bot_loop():
+    global loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(bot_main())
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -70,8 +69,15 @@ def run_flask():
 if __name__ == "__main__":
     import datetime
     print(f"===== Application Startup at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} =====")
-    # Setup webhook
-    asyncio.run(setup_webhook())
-    # Run Flask
+
+    # Run bot in background thread with its own event loop
+    bot_thread = threading.Thread(target=run_bot_loop, daemon=True)
+    bot_thread.start()
+
+    # Wait for bot to initialize
+    import time
+    time.sleep(5)
+
+    # Run Flask in main thread
     run_flask()
     
