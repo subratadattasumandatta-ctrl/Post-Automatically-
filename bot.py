@@ -125,8 +125,10 @@ async def send_scheduled_post():
     hashtags = content["hashtags"]
     keywords = content["keywords"]
 
+    # Clean special chars to avoid Markdown parse errors
+    title_clean = title.replace("*","").replace("_","").replace("`","").replace("[","").replace("]","")
     caption = (
-        f"*{title}*\n\n"
+        f"{title_clean}\n\n"
         f"Download Link:\n{download_link}\n\n"
         f"{hashtags}\n\n"
         f"{keywords}"
@@ -141,11 +143,10 @@ async def send_scheduled_post():
                 chat_id=channel_id,
                 photo=img_bytes,
                 caption=caption,
-                parse_mode="Markdown",
             )
             logger.info(f"✅ Post #{post_count+1} sent | Image #{img_index+1} | Title: {title}")
         else:
-            await bot.send_message(chat_id=channel_id, text=caption, parse_mode="Markdown")
+            await bot.send_message(chat_id=channel_id, text=caption)
             logger.info(f"✅ Post #{post_count+1} sent (no image)")
 
         store["post_count"] = post_count + 1
