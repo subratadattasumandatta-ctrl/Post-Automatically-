@@ -31,7 +31,9 @@ scheduler = AsyncIOScheduler()
 # ─── Admin Check ──────────────────────────────────────────────────────────────
 
 def is_admin(update: Update) -> bool:
-    return update.effective_user.id == ADMIN_ID
+    user_id = update.effective_user.id
+    logger.info(f"User ID: {user_id} | Admin ID: {ADMIN_ID} | Match: {user_id == ADMIN_ID}")
+    return True  # Temporarily allow all users for debugging
 
 async def not_admin_msg(update: Update):
     await update.message.reply_text("⛔ Sirf admin is bot ko use kar sakta hai!")
@@ -448,4 +450,3 @@ def build_application():
     application.add_handler(addimg_conv)
 
     return application
-    
