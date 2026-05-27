@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
+GROQ_API_KEY       = os.environ.get("GROQ_API_KEY", "")
 
 # Conversation states
 WAIT_IMAGES, WAIT_TITLE, WAIT_LINK = range(3)
@@ -32,19 +32,18 @@ store: dict = {}
 
 async def ask_claude(prompt: str) -> str:
     headers = {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
     }
     payload = {
-        "model": "claude-sonnet-4-20250514",
+        "model": "llama3-8b-8192",
         "max_tokens": 1000,
         "messages": [{"role": "user", "content": prompt}],
     }
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload)
+        r = await client.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload)
         r.raise_for_status()
-        return r.json()["content"][0]["text"].strip()
+        return r.json()["choices"][0]["message"]["content"].strip()
 
 
 async def generate_post_content(base_title: str, post_count: int) -> dict:
@@ -346,3 +345,4 @@ def build_application():
     app.add_handler(addimg_conv)
 
     return app
+    
